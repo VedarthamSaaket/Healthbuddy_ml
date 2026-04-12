@@ -1,0 +1,391 @@
+/* src/styles/globals.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=IM+Fell+English:ital@0;1&family=DM+Sans:wght@200;300;400;500;600&family=Crimson+Pro:ital,wght@0,200;0,300;0,400;1,200;1,300;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════
+   CSS DESIGN TOKENS
+═══════════════════════════════════════════ */
+:root {
+  --font-display: 'IM Fell English', serif;
+  --font-serif: 'Cormorant Garamond', serif;
+  --font-body: 'Crimson Pro', serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-ui: 'Outfit', sans-serif;
+  --font-baskerville: 'Libre Baskerville', serif;
+
+  /* Palette, warm editorial */
+  --ink: #0d1829;
+  --navy: #1a2744;
+  --cobalt: #1e3a8a;
+  --blue-mid: #2b4a8c;
+  --blue-light: #5a7fc4;
+  --blue-pale: #a8c0e8;
+  --cream: #f4f0e8;
+  --warm-white: #faf8f4;
+  --parchment: #ede8dc;
+  --parchment-dark: #e2dbd0;
+  --gold: #c9a96e;
+  --gold-dark: #a8834a;
+  --slate: #1a3a4a;
+  --rose-soft: #e8c4c4;
+  --crisis-red: #c0392b;
+
+  /* Semantic */
+  --bg-primary: var(--warm-white);
+  --bg-secondary: var(--parchment);
+  --bg-card: rgba(255, 255, 255, 0.72);
+  --bg-card-hover: rgba(255, 255, 255, 0.92);
+  --border-subtle: rgba(13, 24, 41, 0.08);
+  --border-medium: rgba(13, 24, 41, 0.15);
+  --text-primary: var(--ink);
+  --text-secondary: rgba(13, 24, 41, 0.65);
+  --text-muted: rgba(13, 24, 41, 0.38);
+  --accent: var(--gold);
+
+  --transition-theme: background 200ms ease, color 200ms ease, border-color 200ms ease;
+  --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ═══════════════════════════════════════════
+   BASE RESET
+═══════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 24, 41, 0.15);
+  border-radius: 3px;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE BACKGROUNDS
+═══════════════════════════════════════════ */
+
+/* LANDING */
+.bg-landing {
+  background: var(--warm-white);
+  position: relative;
+}
+
+.bg-landing::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 20% 20%, rgba(168, 192, 232, 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 80% 80%, rgba(201, 169, 110, 0.10) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* CHAT */
+.bg-chat {
+  background: var(--warm-white);
+}
+
+.bg-chat::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 45% at 15% 25%, rgba(168, 192, 232, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 55% at 85% 75%, rgba(201, 169, 110, 0.07) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* SYMPTOMS */
+.bg-symptoms {
+  background: var(--warm-white);
+}
+
+.bg-symptoms::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 65% 40% at 60% 20%, rgba(201, 169, 110, 0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 60% at 20% 80%, rgba(168, 192, 232, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ADVICE */
+.bg-advice {
+  background: var(--warm-white);
+}
+
+.bg-advice::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(168, 192, 232, 0.12) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* APPOINTMENTS */
+.bg-appointments {
+  background: var(--warm-white);
+}
+
+.bg-appointments::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 40% at 50% 10%, rgba(201, 169, 110, 0.10) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* EMERGENCY */
+.bg-emergency {
+  background: #fdf5f5 !important;
+}
+
+.bg-emergency::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 40% at 50% 30%, rgba(192, 57, 43, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+  animation: emergencyGlow 2s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+@keyframes emergencyGlow {
+  0% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   CARD / GLASS
+═══════════════════════════════════════════ */
+.glass {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border-subtle);
+  transition: var(--transition-theme);
+}
+
+.glass-strong {
+  background: rgba(250, 248, 244, 0.92);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--border-medium);
+}
+
+/* ═══════════════════════════════════════════
+   ORNAMENT DIVIDER
+═══════════════════════════════════════════ */
+.ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.ornament::before,
+.ornament::after {
+  content: '';
+  flex: 1;
+  max-width: 80px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(13, 24, 41, 0.18));
+}
+
+.ornament::after {
+  background: linear-gradient(270deg, transparent, rgba(13, 24, 41, 0.18));
+}
+
+/* ═══════════════════════════════════════════
+   CONFIDENCE BAR
+═══════════════════════════════════════════ */
+.confidence-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--cobalt), var(--blue-pale));
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ═══════════════════════════════════════════
+   TYPOGRAPHY HELPERS
+═══════════════════════════════════════════ */
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+.font-baskerville {
+  font-family: var(--font-baskerville);
+}
+
+/* Legacy aliases kept for backwards compat */
+.font-future {
+  font-family: var(--font-ui);
+}
+
+.font-gothic {
+  font-family: var(--font-display);
+}
+
+.font-editorial {
+  font-family: var(--font-serif);
+}
+
+.font-philosopher {
+  font-family: var(--font-body);
+}
+
+.font-mono {
+  font-family: 'DM Mono', monospace;
+}
+
+/* ═══════════════════════════════════════════
+   NOISE TEXTURE OVERLAY
+═══════════════════════════════════════════ */
+.noise-overlay::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ═══════════════════════════════════════════
+   EMERGENCY BANNER
+═══════════════════════════════════════════ */
+.emergency-banner {
+  background: linear-gradient(135deg, #7f1d1d, #c0392b) !important;
+  color: #fff !important;
+  border: 2px solid #e74c3c !important;
+  animation: emergencyPulseBorder 1.5s ease-in-out infinite;
+}
+
+@keyframes emergencyPulseBorder {
+
+  0%,
+  100% {
+    border-color: #c0392b;
+    box-shadow: 0 0 20px rgba(192, 57, 43, 0.4);
+  }
+
+  50% {
+    border-color: #e74c3c;
+    box-shadow: 0 0 50px rgba(231, 76, 60, 0.7);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   PARTICLES CANVAS
+═══════════════════════════════════════════ */
+.particles-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ═══════════════════════════════════════════
+   VOICE RECORDING PULSE
+═══════════════════════════════════════════ */
+.voice-recording {
+  animation: voicePulse 1s ease-in-out infinite;
+}
+
+@keyframes voicePulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.5);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(192, 57, 43, 0);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   LANG PILL
+═══════════════════════════════════════════ */
+.lang-pill {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lang-pill.active {
+  background: rgba(30, 58, 138, 0.08);
+  border-color: rgba(30, 58, 138, 0.3);
+  color: var(--cobalt);
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   INPUT FOCUS
+═══════════════════════════════════════════ */
+input:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.12);
+}
