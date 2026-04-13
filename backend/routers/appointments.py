@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional 
+from typing import Optional
 from models.database import get_db, User, DoctorProfile, Appointment
 from utils.auth import get_current_user
+from security import assert_owns_resource, sanitise_text, log_security_event
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
+
+VALID_STATUSES = ["pending", "confirmed", "cancelled", "completed"]
+
 
 class AppointmentRequest(BaseModel):
     doctor_id: str
@@ -13,7 +17,7 @@ class AppointmentRequest(BaseModel):
 
 
 class AppointmentStatusUpdate(BaseModel):
-    status: str   # "confirmed" | "cancelled" | "completed"
+    status: str
 
 
 @router.get("/doctors")
@@ -21,7 +25,6 @@ def list_doctors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all available doctors."""
     doctors = (
         db.query(DoctorProfile)
         .filter(DoctorProfile.available == True)
@@ -45,17 +48,19 @@ def list_doctors(
 @router.post("/book")
 def book_appointment(
     data: AppointmentRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Book an appointment with a doctor."""
+    if data.note:
+        sanitise_text(data.note, "note")
+
     doctor = db.query(DoctorProfile).filter(DoctorProfile.id == data.doctor_id).first()
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
     if not doctor.available:
         raise HTTPException(status_code=400, detail="Doctor is not available")
 
-    # Check if the user already has a pending appointment with this doctor
     existing = (
         db.query(Appointment)
         .filter(
@@ -95,7 +100,6 @@ def my_appointments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get current user's appointments."""
     appts = (
         db.query(Appointment)
         .filter(Appointment.user_id == current_user.id)
@@ -105,7 +109,8 @@ def my_appointments(
 
     result = []
     for a in appts:
-        # Resolve doctor name if not stored
+        assert_owns_resource(current_user.id, a.user_id, "appointment")
+
         doctor_name = a.doctor_name
         specialty = a.specialty
         if not doctor_name:
@@ -132,7 +137,6 @@ def doctor_patients(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Doctors can view their appointments."""
     if current_user.role != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can access this endpoint")
 
@@ -166,25 +170,24 @@ def doctor_patients(
 def update_status(
     appointment_id: str,
     data: AppointmentStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Doctors can confirm / cancel / complete appointments."""
     if current_user.role != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can update appointment status")
+
+    if data.status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {VALID_STATUSES}")
 
     appt = db.query(Appointment).filter(Appointment.id == appointment_id).first()
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
-    # Verify this appointment belongs to this doctor
     profile = db.query(DoctorProfile).filter(DoctorProfile.user_id == current_user.id).first()
     if not profile or appt.doctor_id != profile.id:
+        log_security_event("IDOR_ATTEMPT", f"doctor={current_user.id} tried to update appt={appointment_id}", request)
         raise HTTPException(status_code=403, detail="Not authorised to update this appointment")
-
-    valid_statuses = ["pending", "confirmed", "cancelled", "completed"]
-    if data.status not in valid_statuses:
-        raise HTTPException(status_code=400, detail=f"Status must be one of: {valid_statuses}")
 
     appt.status = data.status
     db.commit()
@@ -195,17 +198,16 @@ def update_status(
 @router.delete("/{appointment_id}")
 def cancel_appointment(
     appointment_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Patient can cancel their own appointment."""
-    appt = db.query(Appointment).filter(
-        Appointment.id == appointment_id,
-        Appointment.user_id == current_user.id,
-    ).first()
+    appt = db.query(Appointment).filter(Appointment.id == appointment_id).first()
 
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
+
+    assert_owns_resource(current_user.id, appt.user_id, "appointment")
 
     if appt.status == "completed":
         raise HTTPException(status_code=400, detail="Cannot cancel a completed appointment")
@@ -222,9 +224,13 @@ def create_doctor_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create or update doctor profile."""
     if current_user.role != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can create a profile")
+
+    if data.get("name"):
+        sanitise_text(data["name"], "name")
+    if data.get("bio"):
+        sanitise_text(data["bio"], "bio")
 
     existing = db.query(DoctorProfile).filter(DoctorProfile.user_id == current_user.id).first()
 

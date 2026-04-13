@@ -7,12 +7,15 @@ from models.database import get_db, User, ChatMessage, SymptomLog, AdviceLog, Em
 from utils.auth import get_current_user
 from services.llm import virtual_assessment, post_process_response, translate_message
 from services.ml import ensemble_predict, extract_symptoms, is_emergency
+from security import sanitise_text, assert_owns_resource, log_security_event
 import uuid
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-# Matches the [AUDIO-xx] tag the frontend prepends to voice messages
 AUDIO_TAG_RE = re.compile(r'^\[AUDIO-([a-z]{2})\]\s*', re.IGNORECASE)
+
+MAX_MESSAGE_LENGTH = 2000
+MAX_HISTORY_TURNS = 10
 
 
 class MessageRequest(BaseModel):
@@ -20,7 +23,7 @@ class MessageRequest(BaseModel):
     history: list[dict] = []
     language: str = "en"
     session_id: str = ""
-    audio_language: str = ""   # Explicitly sent by the fixed frontend
+    audio_language: str = ""
 
 
 class TranslateRequest(BaseModel):
@@ -31,35 +34,43 @@ class TranslateRequest(BaseModel):
 @router.post("/message")
 async def send_message(
     data: MessageRequest,
+    request=None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not data.content.strip():
+    content = data.content.strip()
+    if not content:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if len(content) > MAX_MESSAGE_LENGTH:
+        raise HTTPException(status_code=400, detail="Message too long.")
+
+    sanitise_text(content, "message")
 
     session_id = data.session_id.strip() or str(uuid.uuid4())
     user_id_str = str(current_user.id)
 
-    # --- Resolve audio language ---
-    # Priority 1: explicit field sent by frontend
-    # Priority 2: [AUDIO-xx] tag embedded in content (fallback / defence-in-depth)
-    audio_lang = data.audio_language.strip().lower() if data.audio_language else ""
+    if data.session_id:
+        existing_session_msg = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.session_id == data.session_id,
+                ChatMessage.user_id != current_user.id,
+            )
+            .first()
+        )
+        if existing_session_msg:
+            log_security_event("SESSION_HIJACK_ATTEMPT", f"user={user_id_str} session={data.session_id}")
+            raise HTTPException(status_code=403, detail="Access denied to this session.")
 
-    tag_match = AUDIO_TAG_RE.match(data.content)
+    audio_lang = data.audio_language.strip().lower() if data.audio_language else ""
+    tag_match = AUDIO_TAG_RE.match(content)
     if not audio_lang and tag_match:
         audio_lang = tag_match.group(1).lower()
+    clean_content = AUDIO_TAG_RE.sub("", content).strip() if tag_match else content
 
-    # Strip the tag so the clean transcript is stored / processed
-    clean_content = AUDIO_TAG_RE.sub("", data.content).strip() if tag_match else data.content
-
-    # --- ML / emergency processing on clean content ---
     emergency = is_emergency(clean_content)
     symptoms = extract_symptoms(clean_content)
-
-    if len(symptoms) >= 3:
-        predictions = ensemble_predict(clean_content)
-    else:
-        predictions = []
+    predictions = ensemble_predict(clean_content) if len(symptoms) >= 3 else []
 
     if emergency:
         log = EmergencyLog(user_id=current_user.id, symptoms=clean_content[:500])
@@ -79,16 +90,14 @@ async def send_message(
         db.flush()
         symptom_log_id = sym_log.id
 
-    # Store the clean content (no tag) in the DB
     user_msg = ChatMessage(
         user_id=current_user.id,
         session_id=session_id,
         role="user",
-        content=clean_content[:2000],
+        content=clean_content[:MAX_MESSAGE_LENGTH],
     )
     db.add(user_msg)
 
-    # --- Fetch history context ---
     recent_symptom_logs = (
         db.query(SymptomLog)
         .filter(cast(SymptomLog.user_id, String) == user_id_str)
@@ -122,15 +131,22 @@ async def send_message(
         for log in recent_medication_logs
     ]
 
-    # --- Call LLM with resolved audio_language ---
+    safe_history = []
+    for msg in data.history[-MAX_HISTORY_TURNS:]:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            safe_history.append({
+                "role": msg["role"],
+                "content": str(msg["content"])[:MAX_MESSAGE_LENGTH],
+            })
+
     response = await virtual_assessment(
-        user_message=clean_content,          # Always pass clean content to the LLM
-        history=data.history,
+        user_message=clean_content,
+        history=safe_history,
         predictions=predictions if predictions else None,
         symptom_count=len(symptoms),
         language=data.language,
         is_emergency=emergency,
-        audio_language=audio_lang or None,   # None when not a voice message
+        audio_language=audio_lang or None,
         symptom_logs=symptom_logs_data,
         medication_logs=medication_logs_data,
     )
@@ -155,15 +171,13 @@ async def send_message(
 
     db.commit()
 
-    suggest_symptom_check = len(symptoms) >= 3
-
     return {
         "response": response,
         "predictions": predictions,
         "symptoms_detected": symptoms,
         "emergency": emergency,
         "session_id": session_id,
-        "suggest_symptom_check": suggest_symptom_check,
+        "suggest_symptom_check": len(symptoms) >= 3,
     }
 
 
@@ -172,6 +186,7 @@ async def translate_text(
     data: TranslateRequest,
     current_user: User = Depends(get_current_user),
 ):
+    sanitise_text(data.text, "text")
     translated = await translate_message(data.text, data.target_language)
     return {"translated": translated, "target_language": data.target_language}
 

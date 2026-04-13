@@ -6,6 +6,7 @@ from models.database import get_db, User, SymptomLog, MedicationLog
 from utils.auth import get_current_user
 from services.llm import analyse_symptoms, generate_medication_recommendations, virtual_assessment
 from services.ml import ensemble_predict, is_emergency
+from security import sanitise_text, assert_owns_resource, log_security_event
 
 router = APIRouter(tags=["health"])
 
@@ -40,8 +41,9 @@ async def generate_advice_route(
     if not text:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    word_count = len(text.split())
-    if word_count < MIN_WORD_COUNT:
+    sanitise_text(text, "symptoms_text")
+
+    if len(text.split()) < MIN_WORD_COUNT:
         short_msg = SHORT_INPUT_RESPONSES.get(data.language, SHORT_INPUT_RESPONSES["en"])
         raise HTTPException(status_code=400, detail=short_msg)
 
@@ -108,11 +110,21 @@ async def generate_medication(
 ):
     user_id_str = str(current_user.id)
 
+    if data.query:
+        sanitise_text(data.query, "query")
+
     query = db.query(SymptomLog).filter(
         cast(SymptomLog.user_id, String) == user_id_str
     )
+
     if data.symptom_log_id:
+        target_log = db.query(SymptomLog).filter(
+            cast(SymptomLog.id, String) == data.symptom_log_id
+        ).first()
+        if target_log:
+            assert_owns_resource(current_user.id, target_log.user_id, "symptom log")
         query = query.filter(cast(SymptomLog.id, String) == data.symptom_log_id)
+
     symptom_logs = query.order_by(SymptomLog.created_at.desc()).limit(5).all()
 
     if not symptom_logs:
