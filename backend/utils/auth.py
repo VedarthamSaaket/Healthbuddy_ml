@@ -34,7 +34,9 @@ def set_auth_cookie(response, token: str):
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        # secure=True in production (HTTPS). Driven by SECURE_COOKIES env var.
+        # Set SECURE_COOKIES=true in your production .env.
+        secure=settings.SECURE_COOKIES,
         max_age=604800,
         path="/",
     )
@@ -44,7 +46,7 @@ def delete_auth_cookie(response):
     response.delete_cookie(
         key="access_token",
         samesite="lax",
-        secure=False,
+        secure=settings.SECURE_COOKIES,
         path="/",
     )
 

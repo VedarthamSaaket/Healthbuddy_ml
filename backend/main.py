@@ -8,6 +8,8 @@ from config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Refuse to start with a missing or placeholder SECRET_KEY
+    settings.validate_secrets()
     Base.metadata.create_all(bind=engine)
     yield
 
@@ -22,7 +24,7 @@ app = FastAPI(
 
 _extra_origin = getattr(settings, "FRONTEND_URL", None)
 ALLOWED_ORIGINS = ["http://localhost:3000"]
-if _extra_origin:
+if _extra_origin and _extra_origin not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(_extra_origin)
 
 app.add_middleware(
