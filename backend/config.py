@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
-    
+    SUPABASE_JWT_SECRET: str = ""
+    GROQ_API_KEY: str = ""
     SERVER_API_KEY: str = ""
     MODEL: str = "llama-3.3-70b-versatile"
     SERVER_BASE_URL: str = "https://api.groq.com/openai/v1/chat/completions"

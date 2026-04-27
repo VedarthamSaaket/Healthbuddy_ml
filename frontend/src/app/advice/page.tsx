@@ -197,6 +197,28 @@ function parseRecommendations(text: string) {
   return result
 }
 
+// ─── FIX: Smart symptom label — prefers named symptoms, falls back to raw_text ───
+function formatSymptomLabel(log: SymptomLog): string {
+  // If symptoms is a non-empty array with real strings, use those
+  if (Array.isArray(log.symptoms) && log.symptoms.length > 0) {
+    const joined = log.symptoms.slice(0, 4).join(', ')
+    if (joined.trim()) return joined
+  }
+  // If symptoms is a non-empty string that isn't literally "[]"
+  if (typeof log.symptoms === 'string' && log.symptoms.trim() && log.symptoms !== '[]') {
+    return String(log.symptoms).slice(0, 80)
+  }
+  // Fall back to raw_text (the actual user input)
+  if (log.raw_text && log.raw_text.trim()) {
+    return log.raw_text.slice(0, 80)
+  }
+  // Last resort: top prediction disease name
+  if (log.predictions?.[0]?.disease) {
+    return log.predictions[0].disease
+  }
+  return 'Symptom check'
+}
+
 export default function MedicationPage() {
   const { language, setLanguage } = useThemeStore()
   const lang = language || 'en'
@@ -274,11 +296,6 @@ export default function MedicationPage() {
   const formatDate = (d: string) => {
     try { return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) }
     catch { return d }
-  }
-
-  const formatSymptoms = (s: string[] | string) => {
-    if (Array.isArray(s)) return s.slice(0, 4).join(', ')
-    return String(s).slice(0, 80)
   }
 
   const otherLangs = LANG_OPTIONS.filter(l => l.code !== resultLang)
@@ -398,6 +415,8 @@ export default function MedicationPage() {
                         {symptomLogs.slice(0, 5).map(log => {
                           const sel = selectedLogId === log.id
                           const topPred = log.predictions?.[0]
+                          // ── FIX: use smart label instead of raw symptoms array ──
+                          const displayLabel = formatSymptomLabel(log)
                           return (
                             <motion.button key={log.id} onClick={() => setSelectedLogId(log.id)} whileHover={{ scale: 1.005 }}
                               style={{
@@ -409,7 +428,7 @@ export default function MedicationPage() {
                               }}>
                               <div>
                                 <p style={{ fontFamily: "'Crimson Pro', serif", fontSize: '0.95rem', color: sel ? '#fff' : 'rgba(255,255,255,0.6)', margin: 0, marginBottom: '4px' }}>
-                                  {formatSymptoms(log.symptoms)}
+                                  {displayLabel}
                                 </p>
                                 {topPred && (
                                   <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.58rem', letterSpacing: '0.5px', color: sel ? 'rgba(168,192,232,0.7)' : 'rgba(168,192,232,0.35)', margin: 0 }}>
@@ -488,7 +507,7 @@ export default function MedicationPage() {
                             </div>
                           )}
 
-                          {/* Language switcher for result , regenerates in chosen language */}
+                          {/* Language switcher for result */}
                           <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px' }}>
                             <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.52rem', letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', marginRight: '4px' }}>
                               {t.generateIn}:

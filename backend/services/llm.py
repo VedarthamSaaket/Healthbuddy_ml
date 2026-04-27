@@ -277,7 +277,7 @@ async def analyse_symptoms(
         base_url = settings.MULTILINGUAL_BASE_URL
         model = settings.MULTILINGUAL_MODEL
     else:
-        api_key = settings.SERVER_API_KEY
+        api_key = settings.GROQ_API_KEY
         base_url = settings.SERVER_BASE_URL
         model = settings.MODEL
 
@@ -350,7 +350,7 @@ async def virtual_assessment(
         base_url = settings.MULTILINGUAL_BASE_URL
         model = settings.MULTILINGUAL_MODEL
     else:
-        api_key = settings.SERVER_API_KEY
+        api_key = settings.GROQ_API_KEY
         base_url = settings.SERVER_BASE_URL
         model = settings.MODEL
 
@@ -464,7 +464,7 @@ async def generate_medication_recommendations(
         context += f"Latest ML predictions:\n{pred_text}\n"
 
     use_multilingual = language != "en" and bool(getattr(settings, "MULTILINGUAL_API_KEY", None))
-    api_key = settings.MULTILINGUAL_API_KEY if use_multilingual else settings.SERVER_API_KEY
+    api_key = settings.MULTILINGUAL_API_KEY if use_multilingual else settings.GROQ_API_KEY
     base_url = settings.MULTILINGUAL_BASE_URL if use_multilingual else settings.SERVER_BASE_URL
     model = settings.MULTILINGUAL_MODEL if use_multilingual else settings.MODEL
 
@@ -538,7 +538,7 @@ async def translate_message(text: str, target_language: str) -> str:
     lang_name = language_names[target_language]
 
     use_multilingual = bool(getattr(settings, "MULTILINGUAL_API_KEY", None))
-    api_key = settings.MULTILINGUAL_API_KEY if use_multilingual else settings.SERVER_API_KEY
+    api_key = settings.MULTILINGUAL_API_KEY if use_multilingual else settings.GROQ_API_KEY
     base_url = settings.MULTILINGUAL_BASE_URL if use_multilingual else settings.SERVER_BASE_URL
     model = settings.MULTILINGUAL_MODEL if use_multilingual else settings.MODEL
 

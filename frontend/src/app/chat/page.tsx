@@ -30,7 +30,7 @@ const INITIAL_MESSAGES: Record<string, string> = {
   en: "What's on your mind? Describe any symptoms or health concerns you have.",
   hi: "आपके मन में क्या है? अपने लक्षण या स्वास्थ्य समस्या बताइए।",
   te: "మీకు ఏమి సమస్య ఉంది? మీ లక్షణాలను వివరించండి.",
-  kn: "ನಿಮ್ಮ ಸಮಸ್ಯೆ ಏನು? ನಿಮ್ಮ ಲಕ್ಷಣಗಳನ್ನು ವಿವరಿಸಿ.",
+  kn: "ನಿಮ್ಮ ಸಮಸ್ಯೆ ಏನು? ನಿಮ್ಮ ಲಕ್ಷಣಗಳನ್ನು ವಿವರಿಸಿ.",
 }
 
 const PLACEHOLDER: Record<string, string> = {
@@ -95,36 +95,84 @@ const item = {
 // Tag format: [AUDIO-xx] transcript
 const AUDIO_TAG_RE = /^\[AUDIO-([a-z]{2})\]\s*/
 
+interface SessionEntry {
+  session_id: string
+  title: string
+  created_at: string
+}
+
 interface ExtendedMessage extends Message {
   isAudioMessage?: boolean
   audioLang?: string
   suggestSymptomCheck?: boolean
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 export default function ChatPage() {
   const { language } = useThemeStore()
-  const [messages, setMessages] = useState<ExtendedMessage[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      content: INITIAL_MESSAGES[language] ?? INITIAL_MESSAGES['en'],
-      timestamp: new Date(),
-      isAudioMessage: false,
-    },
-  ])
 
-  // Reset chat on language change
-  useEffect(() => {
-    setMessages([
-      {
-        id: '0',
-        role: 'assistant',
-        content: INITIAL_MESSAGES[language] ?? INITIAL_MESSAGES['en'],
-        timestamp: new Date(),
+  // Generate a stable session ID per conversation
+  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID())
+
+  const makeInitialMessage = (lang: string): ExtendedMessage => ({
+    id: '0',
+    role: 'assistant',
+    content: INITIAL_MESSAGES[lang] ?? INITIAL_MESSAGES['en'],
+    timestamp: new Date(),
+    isAudioMessage: false,
+  })
+
+  const [messages, setMessages] = useState<ExtendedMessage[]>([makeInitialMessage(language)])
+  const [sessions, setSessions] = useState<SessionEntry[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  // Fetch saved sessions for the sidebar
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setSessions(data)
+      }
+    } catch {
+      // silently fail — sidebar is non-critical
+    }
+  }, [])
+
+  // Load a historical session into the chat area
+  const loadSession = async (sid: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/history`, { credentials: 'include' })
+      if (!res.ok) return
+      const data: any[] = await res.json()
+      const sessionMsgs = data.filter(m => m.session_id === sid)
+      if (!sessionMsgs.length) return
+      const loaded: ExtendedMessage[] = sessionMsgs.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.created_at),
         isAudioMessage: false,
-      },
-    ])
+      }))
+      setMessages(loaded)
+      setSessionId(sid)
+      setActiveSessionId(sid)
+    } catch {
+      toast.error('Could not load session.')
+    }
+  }
+
+  // Reset chat on language change (only if not viewing a historical session)
+  useEffect(() => {
+    if (!activeSessionId) {
+      setMessages([makeInitialMessage(language)])
+    }
   }, [language])
+
+  useEffect(() => {
+    fetchSessions()
+  }, [fetchSessions])
 
   const stopListening = () => {
     recognitionRef.current?.stop()
@@ -145,21 +193,6 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
   const langPickerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    chatAPI.getHistory?.().then((res: any) => {
-      if (res?.data?.length) {
-        const loaded: ExtendedMessage[] = res.data.map((m: any) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: new Date(m.created_at),
-          isAudioMessage: false,
-        }))
-        setMessages(loaded)
-      }
-    }).catch(() => { })
-  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -189,26 +222,19 @@ export default function ChatPage() {
     window.speechSynthesis.speak(utt)
   }, [ttsOn, language])
 
-  /**
-   * Core send function.
-   *
-   * @param overrideContent  Raw content string. If it starts with [AUDIO-xx],
-   *                         the tag is stripped for display but `xx` is sent
-   *                         to the backend as `audio_language`.
-   */
   const sendMessage = async (overrideContent?: string) => {
     const raw = overrideContent || input.trim()
     if (!raw || loading) return
 
     // --- Extract audio language tag if present ---
     const tagMatch = raw.match(AUDIO_TAG_RE)
-    const detectedAudioLang = tagMatch ? tagMatch[1] : null          // e.g. "te", "kn", null
-    const displayContent = tagMatch ? raw.replace(AUDIO_TAG_RE, '') : raw   // Clean text for display
+    const detectedAudioLang = tagMatch ? tagMatch[1] : null
+    const displayContent = tagMatch ? raw.replace(AUDIO_TAG_RE, '') : raw
 
     const userMsg: ExtendedMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: displayContent,   // Show clean text in the bubble
+      content: displayContent,
       timestamp: new Date(),
       isAudioMessage: !!detectedAudioLang,
       audioLang: detectedAudioLang ?? undefined,
@@ -221,17 +247,22 @@ export default function ChatPage() {
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }))
 
-      // --- Pass audio_language so the backend prepends the right system prompt ---
       const res = await chatAPI.sendMessage(
-        raw,                          // Send raw (with tag) so backend can also inspect if needed
+        raw,
         history,
         language,
-        detectedAudioLang ?? '',      // audio_language field
+        detectedAudioLang ?? '',
+        sessionId,        // ← pass the stable session ID so backend groups messages correctly
       )
 
-      const { response, predictions, emergency: isEmergency, suggest_symptom_check } = res.data
+      const { response, predictions, emergency: isEmergency, suggest_symptom_check, session_id: returnedSessionId } = res.data
 
       if (isEmergency) setEmergency(true)
+
+      // If backend echoes a session_id back, keep it consistent
+      if (returnedSessionId && returnedSessionId !== sessionId) {
+        setSessionId(returnedSessionId)
+      }
 
       const assistantMsg: ExtendedMessage = {
         id: (Date.now() + 1).toString(),
@@ -241,11 +272,14 @@ export default function ChatPage() {
         predictions,
         suggestSymptomCheck: suggest_symptom_check,
         isAudioMessage: false,
-        audioLang: detectedAudioLang ?? undefined,  // Track origin lang for translation UI
+        audioLang: detectedAudioLang ?? undefined,
       }
 
       setMessages(prev => [...prev, assistantMsg])
       speak(response)
+
+      // Refresh the session list in the sidebar after each reply
+      fetchSessions()
 
     } catch {
       toast.error('Connection error')
@@ -258,10 +292,6 @@ export default function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
-  /**
-   * Starts speech recognition for a given language code and immediately
-   * sends the result tagged so sendMessage can route it correctly.
-   */
   const startListeningForLang = (lang: string) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { toast.error('Voice input not supported in this browser.'); return }
@@ -277,7 +307,6 @@ export default function ChatPage() {
 
     rec.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript
-      // Always tag so sendMessage knows the origin language
       const tagged = `[AUDIO-${lang}] ${transcript}`
       sendMessage(tagged)
     }
@@ -301,15 +330,12 @@ export default function ChatPage() {
     if (translations[msgId]?.[targetLang]) return
     setTranslatingMsgId(msgId)
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/translate`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, target_language: targetLang }),
-          credentials: 'include',
-        }
-      )
+      const res = await fetch(`${API_BASE}/api/chat/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, target_language: targetLang }),
+        credentials: 'include',
+      })
       const data = await res.json()
       setTranslations(prev => ({
         ...prev,
@@ -323,19 +349,12 @@ export default function ChatPage() {
   }
 
   const startNewConversation = () => {
-    setMessages([{
-      id: '0',
-      role: 'assistant',
-      content: INITIAL_MESSAGES[language] ?? INITIAL_MESSAGES['en'],
-      timestamp: new Date(),
-    }])
+    const newId = crypto.randomUUID()
+    setSessionId(newId)
+    setActiveSessionId(null)
+    setMessages([makeInitialMessage(language)])
     setEmergency(false)
-  }
-
-  const isEnglishOutput = (msg: ExtendedMessage) => {
-    if (msg.role !== 'assistant') return false
-    if (msg.audioLang && msg.audioLang !== 'en') return false
-    return true
+    setTranslations({})
   }
 
   return (
@@ -375,20 +394,47 @@ export default function ChatPage() {
           <span style={{ color: '#a8c0e8', fontSize: '0.9rem' }}>+</span> New conversation
         </button>
 
-        {messages.length <= 1 ? (
+        {sessions.length === 0 ? (
           <p style={{ fontFamily: "'Crimson Pro', serif", fontSize: '0.88rem', fontStyle: 'italic', color: 'rgba(255,255,255,0.2)', padding: '0 4px' }}>
             Your conversation history will appear here.
           </p>
         ) : (
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.55rem', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'rgba(168,192,232,0.3)', marginBottom: '10px', padding: '0 4px' }}>
-              This Session
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.55rem', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'rgba(168,192,232,0.3)', marginBottom: '6px', padding: '0 4px' }}>
+              Past Sessions
             </p>
-            <div style={{ padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(90,127,196,0.2)', background: 'rgba(30,58,138,0.12)' }}>
-              <p style={{ fontFamily: "'Crimson Pro', serif", fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {messages.find(m => m.role === 'user')?.content?.slice(0, 40) || 'Current conversation'}
-              </p>
-            </div>
+            {sessions.map(s => {
+              const isActive = s.session_id === sessionId
+              return (
+                <button
+                  key={s.session_id}
+                  onClick={() => loadSession(s.session_id)}
+                  style={{
+                    width: '100%', padding: '9px 10px', borderRadius: '4px', border: 'none',
+                    background: isActive ? 'rgba(30,58,138,0.3)' : 'transparent',
+                    borderLeft: isActive ? '2px solid rgba(168,192,232,0.5)' : '2px solid transparent',
+                    cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(30,58,138,0.12)' }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                >
+                  <p style={{
+                    fontFamily: "'Crimson Pro', serif", fontSize: '0.9rem',
+                    color: isActive ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.45)',
+                    lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap', margin: 0,
+                  }}>
+                    {s.title || 'Conversation'}
+                  </p>
+                  <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: '0.5rem', letterSpacing: '1px',
+                    color: 'rgba(168,192,232,0.25)', margin: '3px 0 0', textTransform: 'uppercase',
+                  }}>
+                    {new Date(s.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  </p>
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -434,8 +480,8 @@ export default function ChatPage() {
                     <div style={{
                       width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0, marginRight: '10px', marginTop: '2px',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: msg.emergency ? 'linear-gradient(135deg, #c0392b, #7f1d1d)' : 'rgba(30,58,138,0.6)',
-                      border: msg.emergency ? '1px solid rgba(192,57,43,0.4)' : '1px solid rgba(168,192,232,0.25)',
+                      background: (msg as any).emergency ? 'linear-gradient(135deg, #c0392b, #7f1d1d)' : 'rgba(30,58,138,0.6)',
+                      border: (msg as any).emergency ? '1px solid rgba(192,57,43,0.4)' : '1px solid rgba(168,192,232,0.25)',
                     }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="rgba(168,192,232,0.6)" />
@@ -459,12 +505,12 @@ export default function ChatPage() {
                       color: msg.role === 'user' ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.78)',
                       background: msg.role === 'user'
                         ? 'rgba(30,58,138,0.28)'
-                        : msg.emergency
+                        : (msg as any).emergency
                           ? 'rgba(192,57,43,0.1)'
                           : 'rgba(255,255,255,0.04)',
                       border: msg.role === 'user'
                         ? '1px solid rgba(168,192,232,0.2)'
-                        : msg.emergency
+                        : (msg as any).emergency
                           ? '1px solid rgba(192,57,43,0.3)'
                           : '1px solid rgba(90,127,196,0.18)',
                     }}>
@@ -481,10 +527,10 @@ export default function ChatPage() {
                       ))}
 
                       {/* Predictions */}
-                      {msg.predictions && msg.predictions.length > 0 && (
+                      {(msg as ExtendedMessage & { predictions?: Prediction[] }).predictions?.length > 0 && (
                         <div style={{ marginTop: '20px' }}>
                           <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.58rem', letterSpacing: '3px', textTransform: 'uppercase', color: 'rgba(168,192,232,0.5)', marginBottom: '18px' }}>Possible Conditions</p>
-                          {msg.predictions.map((p: Prediction, i: number) => (
+                          {(msg as any).predictions.map((p: Prediction, i: number) => (
                             <motion.div key={i} initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }} style={{ marginBottom: '14px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -508,7 +554,7 @@ export default function ChatPage() {
                       )}
 
                       {/* Symptom check redirect */}
-                      {msg.suggestSymptomCheck && (
+                      {(msg as ExtendedMessage).suggestSymptomCheck && (
                         <div style={{ marginTop: '16px', padding: '10px 14px', borderRadius: '4px', border: '1px solid rgba(201,169,110,0.3)', background: 'rgba(201,169,110,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.6rem', letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(201,169,110,0.8)', margin: 0 }}>
                             Run detailed ML analysis

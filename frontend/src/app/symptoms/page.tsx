@@ -47,6 +47,7 @@ const UI: Record<string, Record<string, string>> = {
     stopRecording: 'Stop',
     recordingIn: 'Recording in',
     tooShort: 'Please describe your symptoms in more detail — at least a sentence or two so we can give you accurate results.',
+    tooFewChips: 'Please select at least 3 symptoms, or describe your symptoms in the text box below.',
     wordCount: 'words',
     minWords: 'minimum 10 words',
   },
@@ -70,6 +71,7 @@ const UI: Record<string, Record<string, string>> = {
     stopRecording: 'रोकें',
     recordingIn: 'रिकॉर्डिंग हो रही है',
     tooShort: 'कृपया अपने लक्षणों को अधिक विस्तार से बताएं ताकि हम सटीक परिणाम दे सकें।',
+    tooFewChips: 'कृपया कम से कम 3 लक्षण चुनें, या नीचे टेक्स्ट बॉक्स में अपने लक्षण बताएं।',
     wordCount: 'शब्द',
     minWords: 'न्यूनतम 10 शब्द',
   },
@@ -93,6 +95,7 @@ const UI: Record<string, Record<string, string>> = {
     stopRecording: 'ఆపు',
     recordingIn: 'రికార్డింగ్ అవుతోంది',
     tooShort: 'దయచేసి మీ లక్షణాలను మరింత వివరంగా వివరించండి, తద్వారా మేము ఖచ్చితమైన ఫలితాలు అందించగలము.',
+    tooFewChips: 'దయచేసి కనీసం 3 లక్షణాలు ఎంచుకోండి, లేదా క్రింద టెక్స్ట్ బాక్స్‌లో వివరించండి.',
     wordCount: 'పదాలు',
     minWords: 'కనీసం 10 పదాలు',
   },
@@ -116,6 +119,7 @@ const UI: Record<string, Record<string, string>> = {
     stopRecording: 'ನಿಲ್ಲಿಸಿ',
     recordingIn: 'ರೆಕಾರ್ಡಿಂಗ್ ಆಗುತ್ತಿದೆ',
     tooShort: 'ದಯವಿಟ್ಟು ನಿಮ್ಮ ರೋಗಲಕ್ಷಣಗಳನ್ನು ಹೆಚ್ಚು ವಿವರವಾಗಿ ವಿವರಿಸಿ ಇದರಿಂದ ನಾವು ನಿಖರ ಫಲಿತಾಂಶಗಳನ್ನು ನೀಡಬಹುದು.',
+    tooFewChips: 'ದಯವಿಟ್ಟು ಕನಿಷ್ಠ 3 ರೋಗಲಕ್ಷಣಗಳನ್ನು ಆಯ್ಕೆ ಮಾಡಿ, ಅಥವಾ ಕೆಳಗಿನ ಪಠ್ಯ ಪೆಟ್ಟಿಗೆಯಲ್ಲಿ ವಿವರಿಸಿ.',
     wordCount: 'ಪದಗಳು',
     minWords: 'ಕನಿಷ್ಠ 10 ಪದಗಳು',
   },
@@ -145,6 +149,7 @@ const MicIcon = ({ listening }: { listening: boolean }) => (
 )
 
 const MIN_WORDS = 10
+const MIN_CHIPS_ONLY = 3
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.08, delayChildren: 0.15 } } }
 const item = { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] } } }
@@ -185,17 +190,45 @@ export default function SymptomsPage() {
     'सीने में दर्द', 'ఛాతీ నొప్పి', 'ಎದೆ ನೋವು']
   const checkEmergency = (q: string) => EMERGENCY_WORDS.some(w => q.toLowerCase().includes(w.toLowerCase()))
 
-  const analyze = async (overrideQuery?: string) => {
-    const query = overrideQuery || buildQuery()
-    if (!query.trim()) {
-      setInputError(t.tooShort)
-      return
+  const validateInput = (): string | null => {
+    const hasText = text.trim().length > 0
+    const hasChips = selected.length > 0
+
+    if (!hasText && !hasChips) {
+      return t.tooShort
     }
 
-    const wc = wordCount(query)
-    if (wc < MIN_WORDS) {
-      setInputError(t.tooShort)
-      return
+    if (hasText) {
+      const wc = wordCount(text.trim())
+      if (wc < MIN_WORDS && !hasChips) {
+        return t.tooShort
+      }
+      if (wc < MIN_WORDS && hasChips) {
+        return null
+      }
+    }
+
+    if (!hasText && hasChips && selected.length < MIN_CHIPS_ONLY) {
+      return t.tooFewChips
+    }
+
+    return null
+  }
+
+  const analyze = async (overrideQuery?: string) => {
+    const query = overrideQuery || buildQuery()
+
+    if (!overrideQuery) {
+      const err = validateInput()
+      if (err) {
+        setInputError(err)
+        return
+      }
+    } else {
+      if (!query.trim() || wordCount(query) < MIN_WORDS) {
+        setInputError(t.tooShort)
+        return
+      }
     }
 
     setInputError('')
@@ -262,8 +295,8 @@ export default function SymptomsPage() {
 
   const confidenceColor = (c: number) => c >= 65 ? '#a8c0e8' : c >= 35 ? '#c9a96e' : '#5a7fc4'
 
-  const currentWordCount = wordCount(buildQuery())
-  const showWordCounter = (text.length > 0 || selected.length > 0) && !hasResult
+  const currentWordCount = wordCount(text.trim())
+  const showWordCounter = text.length > 0 && !hasResult
 
   return (
     <main style={{ minHeight: '100vh', background: '#0d1829', position: 'relative', overflow: 'hidden' }}>
@@ -286,7 +319,6 @@ export default function SymptomsPage() {
       }}>
         <motion.div variants={container} initial="hidden" animate="show">
 
-          {/* ── Language Bar ──────────────────────────────────────────────────── */}
           <motion.div variants={item} style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', marginBottom: '28px' }}>
             <div style={{
               display: 'flex', gap: '3px',
@@ -321,7 +353,6 @@ export default function SymptomsPage() {
             </div>
           </motion.div>
 
-          {/* ── Header ───────────────────────────────────────────────────────── */}
           <motion.div variants={item} style={{ marginBottom: '44px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
               <div style={{ width: '28px', height: '1px', background: 'rgba(168,192,232,0.5)' }} />
@@ -337,7 +368,6 @@ export default function SymptomsPage() {
             </p>
           </motion.div>
 
-          {/* ── Quick Select ─────────────────────────────────────────────────── */}
           <motion.div variants={item} style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(90,127,196,0.2)',
             borderRadius: '4px', padding: '28px 32px', marginBottom: '16px',
@@ -349,7 +379,7 @@ export default function SymptomsPage() {
               {symptoms.map(s => {
                 const active = selected.includes(s)
                 return (
-                  <motion.button key={s} onClick={() => toggleSymptom(s)} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                  <motion.button key={s} onClick={() => { toggleSymptom(s); if (inputError) setInputError('') }} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                     style={{
                       padding: '6px 16px', borderRadius: '2px',
                       border: active ? '1px solid rgba(168,192,232,0.55)' : '1px solid rgba(90,127,196,0.2)',
@@ -366,7 +396,6 @@ export default function SymptomsPage() {
             </div>
           </motion.div>
 
-          {/* ── Free text + Mic ──────────────────────────────────────────────── */}
           <motion.div variants={item} style={{
             background: inputError ? 'rgba(192,57,43,0.04)' : 'rgba(255,255,255,0.03)',
             border: inputError ? '1px solid rgba(192,57,43,0.35)' : '1px solid rgba(90,127,196,0.2)',
@@ -378,7 +407,6 @@ export default function SymptomsPage() {
                 {t.describeLabel}
               </p>
 
-              {/* Mic button + language picker */}
               <div style={{ position: 'relative' }}>
                 <motion.button
                   onClick={handleMicClick}
@@ -462,7 +490,6 @@ export default function SymptomsPage() {
             )}
           </motion.div>
 
-          {/* ── Word counter + inline error ───────────────────────────────────── */}
           <motion.div variants={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', minHeight: '20px' }}>
             <AnimatePresence mode="wait">
               {inputError ? (
@@ -491,7 +518,6 @@ export default function SymptomsPage() {
             )}
           </motion.div>
 
-          {/* ── Analyse button ───────────────────────────────────────────────── */}
           <motion.button
             variants={item} onClick={() => analyze()} disabled={loading}
             whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
@@ -516,7 +542,6 @@ export default function SymptomsPage() {
             ) : t.analyseBtn}
           </motion.button>
 
-          {/* ── Results ──────────────────────────────────────────────────────── */}
           <AnimatePresence>
             {hasResult && (
               <motion.div
