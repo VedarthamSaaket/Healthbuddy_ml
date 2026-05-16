@@ -55,8 +55,10 @@ export const chatAPI = {
   sendMessage: (
     content: string,
     history: { role: string; content: string }[],
-    language = 'en'
-  ) => api.post('/api/chat/message', { content, history, language }),
+    language = 'en',
+    audio_language = '',
+    session_id = ''
+  ) => api.post('/api/chat/message', { content, history, language, audio_language, session_id }),
 
   getHistory: () => api.get('/api/chat/history'),
 

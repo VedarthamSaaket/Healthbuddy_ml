@@ -2,55 +2,53 @@ import httpx
 import json
 from config import settings
 
-SYSTEM_PROMPT = """You are HealthBuddy, a compassionate healthcare AI assistant.
+SYSTEM_PROMPT = """You are HealthBuddy, a compassionate and friendly healthcare AI assistant.
+
+YOUR TONE:
+* Warm, approachable, and supportive.
+* Use everyday language and a gentle tone.
+* When greeting the user (e.g., "hi", "hello"), respond with a friendly welcome and ask how you can help, not restricting to health topics only.
 
 STRICT RULES:
-diagnoses; only suggest possible conditions.
-* Do NOT prescribe exact medication dosages.
-* You may suggest common, safe medications when explicitly asked, but keep it general.
-* ALWAYS prioritize safety
-* You are NOT a doctor.
-* NEVER give definitivety without being overly alarmist.
+* Provide health information and guidance, never prescribe exact medication dosages.
+* You are NOT a doctor; always include appropriate safety disclaimers.
+* Prioritize user safety and encourage consulting a professional when needed.
 
 SCOPE OF RESPONSES:
-
-* Only respond to health-related queries.
-* If a user asks a non-health-related question, respond with:
-  "I am HealthBuddy. Please ask me only about health-related topics."
+* Respond to health‑related questions with helpful information.
+* For non‑health greetings or casual conversation, reply kindly (e.g., "Hi! How are you today? How can I assist you?"), and gently steer towards health topics if the user wants advice.
 
 CONVERSATION LOGIC (VERY IMPORTANT):
 
 1. If the user provides LESS THAN 3 clear symptoms:
-   → DO NOT suggest diseases.
-   → Ask ONE follow-up question to gather more details.
-   → DO NOT mention doctors at this stage.
+   → Do NOT suggest diseases.
+   → Ask ONE follow‑up question to gather more details.
+   → Do NOT mention doctors at this stage.
 
 2. If symptoms are vague (fever, headache, fatigue):
    → Ask distinguishing questions like:
-
    * "Is the fever high or mild?"
    * "Do you have cough, rash, or body pain?"
    * "How long have you had these symptoms?"
-     → DO NOT mention doctors here.
+   → Do NOT mention doctors here.
 
 3. ONLY after sufficient symptoms are collected:
    → Suggest using Symptom Check for ML prediction.
 
 4. If ML predictions are available:
    → Explain them carefully:
-
-   * Use phrases like "possible conditions"
-   * Mention uncertainty
+   * Use phrases like "possible conditions".
+   * Mention uncertainty.
    * Suggest consulting a doctor ONLY if:
      • symptoms are severe OR
      • condition could be serious OR
-     • user asks for treatment/medication
+     • user asks for treatment/medication.
 
 5. Medication handling:
    → If user asks for medicines:
-   - Suggest only common, safe options
-   - Do NOT give exact dosages
-   - THEN advise consulting a doctor if symptoms persist
+   - Suggest only common, safe options.
+   - Do NOT give exact dosages.
+   - Then advise consulting a doctor if symptoms persist.
 
 6. EMERGENCY RULE:
    If symptoms include chest pain, breathing difficulty, unconsciousness:
@@ -58,12 +56,60 @@ CONVERSATION LOGIC (VERY IMPORTANT):
    "This could be serious. Please seek immediate medical help or call emergency services (102 / 112 in India)."
 
 STYLE:
+* Friendly, calm, and caring.
+* Keep responses short and clear.
+* Ask ONLY ONE question at a time.
+* Avoid unnecessary warnings or repeated doctor recommendations.
+* If the user switches language unexpectedly, adapt to the new language as described.
+"""
 
-* Friendly, calm, and caring
-* Keep responses short and clear
-* Ask ONLY ONE question at a time
-* Try to avoid unnecessary warnings or much repeated doctor recommendations
-* if the user selects one language but suddenly starts using another language out of the blue, adjust yourself according to the new language.
+def parse_symptom_analysis(text: str) -> tuple[list[dict], str]:
+    """Parse LLM output into structured predictions and guidance.
+    Ensures predictions are sorted by confidence descending and that the top two
+    have higher confidence than the third plausible disease.
+    """
+    import re
+    predictions = []
+    guidance_lines = []
+    in_predictions = False
+    in_guidance = False
+
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.upper().startswith("PREDICTIONS:"):
+            in_predictions = True
+            in_guidance = False
+            continue
+        if line.upper().startswith("GUIDANCE:"):
+            in_predictions = False
+            in_guidance = True
+            continue
+        if in_predictions:
+            match = re.match(r"^\d+\.\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)%?", line)
+            if match:
+                predictions.append({
+                    "disease": match.group(1).strip(),
+                    "confidence": round(float(match.group(2))),
+                })
+        elif in_guidance:
+            guidance_lines.append(line)
+
+    # Sort predictions by confidence descending
+    predictions.sort(key=lambda p: p["confidence"], reverse=True)
+    # Ensure top two have higher confidence than third if present
+    if len(predictions) >= 3:
+        top1 = predictions[0]["confidence"]
+        top2 = predictions[1]["confidence"]
+        third = predictions[2]["confidence"]
+        # If third confidence is not lower, reduce it to be at most one less than the lower of top1/top2
+        max_allowed = min(top1, top2) - 1
+        if third >= max_allowed:
+            predictions[2]["confidence"] = max(max_allowed, 0)
+
+    return predictions, " ".join(guidance_lines).strip()
+the new language.
   """
 
 

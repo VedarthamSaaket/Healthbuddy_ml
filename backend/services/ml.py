@@ -404,10 +404,22 @@ def ensemble_predict(text: str) -> List[dict]:
         key=lambda x: (x[0] not in COMMON_DISEASES, -x[1])
     )
 
-    return [
+    results = [
         {"disease": d, "confidence": round(conf * 100, 1)}
         for d, conf in sorted_results[:3]
     ]
+
+    results.sort(key=lambda x: x["confidence"], reverse=True)
+
+    if len(results) >= 3:
+        top1 = results[0]["confidence"]
+        top2 = results[1]["confidence"]
+        third = results[2]["confidence"]
+        max_allowed = min(top1, top2) - 1.0
+        if third >= max_allowed:
+            results[2]["confidence"] = max(max_allowed, 0.0)
+
+    return results
 
 
 # -----------------------------

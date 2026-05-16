@@ -227,7 +227,7 @@ def get_sessions(
             ChatMessage.role == "user",
             ChatMessage.session_id.isnot(None),
         )
-        .order_by(ChatMessage.created_at.desc())
+        .order_by(ChatMessage.created_at.asc())
         .all()
     )
 
@@ -239,6 +239,13 @@ def get_sessions(
                 "session_id": sid,
                 "title": row.content[:60],
                 "created_at": str(row.created_at),
+                "last_active": row.created_at,
             }
+        else:
+            seen[sid]["last_active"] = row.created_at
 
-    return list(seen.values())
+    sorted_sessions = sorted(seen.values(), key=lambda x: x["last_active"], reverse=True)
+    for s in sorted_sessions:
+        s.pop("last_active", None)
+
+    return sorted_sessions
